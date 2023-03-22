@@ -1,3 +1,12 @@
+<!-- TOC -->
+* [More than One Way to Update your Kafka-Backed Entity from another Data Source using Kafka Streams](#more-than-one-way-to-update-your-kafka-backed-entity-from-another-data-source-using-kafka-streams)
+  * [Business Context, Requirements and Constraints](#business-context-requirements-and-constraints)
+  * [Existing Setup](#existing-setup)
+  * [Option 1: stream the data flow to Kafka and perform a Foreign-Key Join](#option-1--stream-the-data-flow-to-kafka-and-perform-a-foreign-key-join)
+  * [Option 2: Use Kafka Streams and Update Commands to merge the datasources](#option-2--use-kafka-streams-and-update-commands-to-merge-the-datasources)
+  * [Comparison and Final Thoughts](#comparison-and-final-thoughts)
+<!-- TOC -->
+
 # More than One Way to Update your Kafka-Backed Entity from another Data Source using Kafka Streams 
 
 Data update processes can sometimes be complicated in event-driven ecosystems. 
