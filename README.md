@@ -30,7 +30,7 @@ One of the attributes tells the estimate minimum and maximum time when the item 
 We will call it "delivery time" from now on. 
 Logistics department manually controls these delivery times by assigning minimum and maximum delivery time to each "delivery class" - and every item has a delivery class assigned.
 
-![Delivery Class Table](images\delivery_class_table.png)
+![Delivery Class Table](images/delivery_class_table.png)
 
 They update delivery times via their own specific process they are used to, and the data is saved to their own separate datasource which has nothing to do with the overall existing items data processing and storage platform.
 Once they change the time for a specific class, they expect every item which has this class assigned to eventually have the updated delivery time values, and these values should be visible in the item description page in the online shop.
@@ -52,7 +52,7 @@ Logistics department stores their class -> times mappings in an SQL RDBMS, and t
 
 Below picture shows the concept view of the existing setup which is described above.
 
-![Existing Setup](images\existing_setup.png)
+![Existing Setup](images/existing_setup.png)
 
 The problem of such an approach is that when the times for a class are changed, and even are propagated to DynamoDB table, it's challenging to update the times values of all items which have this delivery class assigned.
 To do that, the item has to be updated via the supplier channel, so that the stream application could pick an event with its new state, go to DynamoDB to look up the times and assign them to the object, and then send the enriched object as a message further.
@@ -112,7 +112,7 @@ The code for the topology could look like this:
 
 The architecture of the target setup would look like this:
 
-![Option 1](images\option1.png)
+![Option 1](images/option1.png)
 
 The solution has the following benefits:
 
