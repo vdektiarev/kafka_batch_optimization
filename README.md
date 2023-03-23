@@ -34,6 +34,7 @@ Logistics department manually controls these delivery times by assigning minimum
 
 They update delivery times via their own specific process they are used to, and the data is saved to their own separate datasource which has nothing to do with the overall existing items data processing and storage platform.
 Once they change the time for a specific class, they expect every item which has this class assigned to eventually have the updated delivery time values, and these values should be visible in the item description page in the online shop.
+There is no specific requirement on how quick the information must be updated in the online shop.
 
 Items information is supposed to be visible not only in the online shop, but also at other different data integrations, like Google searches, partner shops etc. 
 So it's not acceptable to assign updated delivery time values to the item at the very end stage of items information processing, when the item state lands to the shop datasource. 
@@ -182,3 +183,15 @@ However, it also brings some challenges:
 
 ## Comparison and Final Thoughts
 
+Both approaches will work and accomplish the given requirements in this specific case.
+However, one of them could bring performance degradation of the whole data processing chain, while another one is challenging to implement and could bring conceptual inconsistencies of the whole data processing platform.
+You need to consider the following things when choosing between approaches:
+
+1. Your data volumes.
+2. Cardinality between both data sources you want to join.
+3. Your context and capabilities of the platform you're working on.
+4. Maturity of the team to implement both approaches, their priorities and capabilities.
+5. Requirements on performance, reliability, conceptual integrity and cost-efficiency of the solution.
+
+Overall, the most efficient approach will depend on the specific requirements and constraints of your system. 
+It's always a good idea to benchmark and test different approaches to determine which one provides the best performance for your use case.
