@@ -117,11 +117,68 @@ The architecture of the target setup would look like this:
 The solution has the following benefits:
 
 1. This approach naturally uses Kafka and Kafka Streams which aligns conceptually with the overall approach of data processing in the system.
-2. The process is automated and does not rely on synthetic updates. One job needs to be executed once the classes are ready to be posted.
+2. The process is automated and does not rely on synthetic updates. One job needs to be executed once the classes are ready to be posted. In another context, you can avoid using jobs and producers at all, and use other automated tools like Kafka Connect - this would work too, if you can afford connecting to the original datasource, and it won't bring tight coupling.
 3. The approach is cost-effective since it does not need a DynamoDB table and frequent reads from it.
-4. 
+4. The new topic with classes can be easily used in any other processing logic done with Kafka Streams.
+
+However, it also brings few challenges:
+
+1. Foreign Key Join can sometimes be time-consuming operation. Especially when there is low cardinality between two tables. For this particular case, there could be millions of items, but there are only ~50 delivery classes. That could mean potential increased data processing time when a class is updated. And consequently it can impact the platform overall performance and become a bottleneck for the processing chain.
+2. Foreign Key Join creates additional topics and KTables to perform the join - it needs memory to manage the state information about two tables. In that case the memory consumption of Kafka system can increase.
+
+All in all, the approach works fine if the cardinality between two tables you have is high. It can be fully automated, it stays within the whole Kafka context and flexible enough for more integrations.
+But let's look at another example of how could we complete the task if we have performance concerns.
 
 ## Option 2: Use Kafka Streams and Update Commands to merge the datasources
+
+If we are concerned about the performance of Foreign Key Join when we have only few delivery classes to consider, we can try a bit more creative approach.
+
+If we take a look at the existing setup of the system, we are already fine with updating items' delivery times when we have an update of an item coming from the supplier source.
+The thing we're not capable of yet, is reacting on the update of delivery times in the updated class.
+At the same time, our platform can know exactly when the class is updated, and can react on such events.
+We can approach the requirement accomplishment by finding a way how to send signals to our platform to reprocess our items' information, so that the delivery times could be updated.
+And we want to avoid Foreign Key Joins in our approach :)
+
+We are going to use a regular inner join by message key which is the fastest way to join the streams. In case when our items information have a itemId as a key, we need to have a topic with itemId as a message key as well, so that we could send events there when we want the stream to redo the work, look up DynamoDB table and update the values of delivery times. 
+We'll call this new topic "replay" topic from now on - because we want to use this topic as a source for "replay" events for our items, so that they could go through stream processing logic one more time when we need them to.
+
+The challenging part there would be to have these itemIds available to us, and to have a topic filled with such messages, once we want the times to be updated in our items information.
+First of all, you need a source for the item ids. This could be a database, or some system you could integrate with to efficiently grab these ids and place them into the topic.
+
+For our case, since we are a shop, we've got a search engine which is running on Apache Solr. We can query it for the item ids, or we can use a middleware access layer like API, if we have one, and we want to maintain low coupling in the system.
+
+Once we have a storage with ids, we need a functional unit to grab them and produce them in the new topic on demand.
+This could be a combination of a job and an application which could read the ids and post them to Kafka.
+
+In short, the algorithm would look like that:
+
+1. Create a new topic in Kafka with itemId as a message key. Choose the number of partitions and replication factor (it could be the same as you general items topic parameters).
+2. Change your main topology so that it would not only read DynamoDB for classes data, but would also perform an inner join of a stream with items' data with the stream of your new topic.
+3. Implement a functional component which would read the itemIds, and post them into the new Kafka topic. Consider retry policies and failover mechanisms for it.
+4. Add an interface to trigger the process of itemIds replay, and integrate with it in the classes exporting job.
+
+The approach would conceptually look like that:
+
+![Option 2](images/option2.png)
+
+The following optimizations should be considered if we choose this approach:
+
+1. If there are millions of items, we need a paginated way to read the item ids to gradually consume the data and to replay it in Kafka.
+2. The process shouldn't ideally be synchronous, as the replay process could take time and fail in the middle. Ideally one should split the ids in subsets (for example, using search engine pagination) and track the page number in a persistent storage, so that the process would know where it stopped if failed, so that it could retry again. Consequently, a retry policy should also be considered, e.g. on the initial command level, which could be sent as an event.
+3. If you can filter the ids which you need, you should consider that. For example, for the shop only online items are relevant for delivery times updates. This is considered on search engine query level.
+
+The approach has the following benefits:
+
+1. Just like the first approach, the process does not rely on manual interventions, except for the job which needs to be executed to trigger the process.
+2. The approach will be performance efficient for the items pipeline in general, because it uses an efficient streams join to process the data, and fast queries to DynamoDB which could be additionally cached if needed.
+3. The approach implements few universal mechanisms for events replay, which can be used in other parts of the data pipeline if needed.
+4. The approach works fast enough especially for low amount of delivery classes to merge with the items, if we have quick access to classes data.
+
+However, it also brings some challenges:
+
+1. You need access to the item ids, ideally cost-effective and performance efficient.
+2. You need to implement a service which does the job of ids reading and replaying to Kafka - and make it reliable and fault-tolerant.
+3. You still need to change your initial topology to do the join of your general items stream with the new topic.
 
 ## Comparison and Final Thoughts
 
