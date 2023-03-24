@@ -86,16 +86,16 @@ The algorithm to implement the approach will be the following:
 The code for ValueJoiner could look in the following way in Java:
 
 ```java
-package io.confluent.developer;
+package de.soname.developer;
 
-import de.soname.developer.avro.Item;
-import de.soname.developer.avro.DeliveryClass;
-import de.soname.developer.avro.EnrichedItem;
+import de.soname.developer.schema.DeliveryClass;
+import de.soname.developer.schema.Item;
+import de.soname.developer.schema.ItemDeliveryClassMergedData;
 import org.apache.kafka.streams.kstream.ValueJoiner;
 
-public class ItemDeliveryClassJoiner implements ValueJoiner<Item, DeliveryClass, EnrichedItem> {
-    public EnrichedItem apply(Item item, DeliveryClass deliveryClass) {
-        return EnrichedItem.newBuilder()
+public class ItemDeliveryClassJoiner implements ValueJoiner<Item, DeliveryClass, ItemDeliveryClassMergedData> {
+    public ItemDeliveryClassMergedData apply(Item item, DeliveryClass deliveryClass) {
+        return ItemDeliveryClassMergedData.newBuilder()
                 .setId(item.getId())
                 .setDescription(item.getDescription())
                 .setMinimumDeliveryTime(deliveryClass.getMinimumTime())
@@ -108,7 +108,51 @@ public class ItemDeliveryClassJoiner implements ValueJoiner<Item, DeliveryClass,
 The code for the topology could look like this:
 
 ```java
+package de.soname.developer;
 
+import de.soname.developer.schema.DeliveryTimeClass;
+import de.soname.developer.schema.DeliveryClassNameKey;
+import de.soname.developer.schema.ItemData;
+import de.soname.developer.schema.ItemDeliveryClassMergedData;
+import de.soname.developer.schema.ItemKey;
+import lombok.RequiredArgsConstructor;
+import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KTable;
+import org.apache.kafka.streams.kstream.Materialized;
+import org.apache.kafka.streams.kstream.Named;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.function.Function;
+
+@Configuration
+@RequiredArgsConstructor
+public class ItemDeliveryClassTopology {
+    
+    private final ItemDeliveryClassJoiner itemDeliveryClassJoiner;
+
+    @Bean
+    public Function<KStream<ItemKey, ItemData>,
+            Function<KTable<DeliveryClassNameKey, DeliveryTimeClass>,  
+                    KStream<ItemKey, ItemDeliveryClassMergedData>>> itemDeliveryClassDataStream() {
+        return itemStream -> deliveryClassTable -> 
+                itemStream
+                    .toTable(Named.as("itemTable"), Materialized.as("itemTableStore"))
+                    .leftJoin(deliveryClassTable,
+                            ItemDeliveryClassTopology::fkExtractor,
+                            itemDeliveryClassJoiner,
+                            Named.as("itemDeliveryClassMerged"))
+                    .toStream();
+    }
+
+    private static DeliveryClassNameKey fkExtractor(ItemData itemData) {
+
+        return DeliveryClassNameKey.newBuilder()
+                .setDeliveryClassName(itemData.getDeliveryClassName())
+                .build();
+    }
+}
 ```
 
 The architecture of the target setup would look like this:
@@ -126,6 +170,7 @@ However, it also brings few challenges:
 
 1. Foreign Key Join can sometimes be time-consuming operation. Especially when there is low cardinality between two tables. For this particular case, there could be millions of items, but there are only ~50 delivery classes. That could mean potential increased data processing time when a class is updated. And consequently it can impact the platform overall performance and become a bottleneck for the processing chain.
 2. Foreign Key Join creates additional topics and KTables to perform the join - it needs memory to manage the state information about two tables. In that case the memory consumption of Kafka system can increase.
+3. In even more complex cases (e.g. in our real case, we had an array of classes in every item, and we had to sort them by minimumTime and choose the most optimal one), the topology could become very complex, resulting in many joins groupings and aggregations, significantly impacting performance.
 
 All in all, the approach works fine if the cardinality between two tables you have is high. It can be fully automated, it stays within the whole Kafka context and flexible enough for more integrations.
 But let's look at another example of how could we complete the task if we have performance concerns.
@@ -140,7 +185,7 @@ At the same time, our platform can know exactly when the class is updated, and c
 We can approach the requirement accomplishment by finding a way how to send signals to our platform to reprocess our items' information, so that the delivery times could be updated.
 And we want to avoid Foreign Key Joins in our approach :)
 
-We are going to use a regular inner join by message key which is the fastest way to join the streams. In case when our items information have a itemId as a key, we need to have a topic with itemId as a message key as well, so that we could send events there when we want the stream to redo the work, look up DynamoDB table and update the values of delivery times. 
+We are going to use a regular primary key join by message key which is the fastest way to join the streams. In case when our items information have a itemId as a key, we need to have a topic with itemId as a message key as well, so that we could send events there when we want the stream to redo the work, look up DynamoDB table and update the values of delivery times. 
 We'll call this new topic "replay" topic from now on - because we want to use this topic as a source for "replay" events for our items, so that they could go through stream processing logic one more time when we need them to.
 
 The challenging part there would be to have these itemIds available to us, and to have a topic filled with such messages, once we want the times to be updated in our items information.
@@ -154,9 +199,49 @@ This could be a combination of a job and an application which could read the ids
 In short, the algorithm would look like that:
 
 1. Create a new topic in Kafka with itemId as a message key. Choose the number of partitions and replication factor (it could be the same as you general items topic parameters).
-2. Change your main topology so that it would not only read DynamoDB for classes data, but would also perform an inner join of a stream with items' data with the stream of your new topic.
+2. Change your main topology so that it would not only read DynamoDB for classes data, but would also perform a primary key join of a stream with items' data with the stream of your new topic.
 3. Implement a functional component which would read the itemIds, and post them into the new Kafka topic. Consider retry policies and failover mechanisms for it.
 4. Add an interface to trigger the process of itemIds replay, and integrate with it in the classes exporting job.
+
+To implement the overall topology with primary key join, one will need to define it in the way similar to the one shown below, written in Java using Spring:
+
+```java
+package de.soname.developer;
+
+import de.soname.developer.schema.ItemData;
+import de.soname.developer.schema.ItemDataMerged;
+import de.soname.developer.schema.ItemDataReplay;
+import de.soname.developer.schema.ItemKey;
+import lombok.RequiredArgsConstructor;
+import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KTable;
+import org.apache.kafka.streams.kstream.Named;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.function.Function;
+
+@Configuration
+@RequiredArgsConstructor
+public class ItemReplayTopology {
+    
+  private final ItemDataToItemDataReplayJoiner itemDatatoItemDataReplayJoiner;
+  
+  @Bean
+  public Function<KTable<ItemKey, ItemData>,
+          Function<KTable<ItemKey, ItemDataReplay>,
+                  KStream<ItemKey, ItemDataMerged>>> itemReplayStream() {
+    return itemStream -> replayStream -> itemStream
+            .leftJoin(replayStream, itemDatatoItemDataReplayJoiner, Named.as("itemDataReplayMerged"))
+            .toStream();
+  }
+
+}
+```
+
+While the ValueJoiner could be written in any convenient way similar to the one from option 1: depending on the data which is needed or not needed from the Replay object.
+For example in this joiner we need to inject the functionality for delivery classes lookup in DynamoDb and times assignment into ``ÌtemDataMerged``.
 
 The approach would conceptually look like that:
 
