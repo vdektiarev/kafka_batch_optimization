@@ -9,7 +9,7 @@
 
 # More than One Way to Update your Kafka-Backed Entity from another Data Source using Kafka Streams 
 
-Data update processes can sometimes be complicated in event-driven ecosystems. 
+Data manipulation processes can sometimes be complicated in event-driven ecosystems. 
 
 In the most simple case, if you have a business entity which needs to be kept updated, and you have a process generating updates for this specific entity, it's of course more than straightforward.
 Let's say we have Kafka as a backbone for our events' storage and an entity the state of which is tracked there (topic with messages - key is the entity unique identifier, value is its state). 
@@ -175,7 +175,9 @@ However, it also brings few challenges:
 2. Foreign Key Join creates additional topics and KTables to perform the join - it needs memory to manage the state information about two tables. In that case the memory consumption of Kafka system can increase.
 3. In even more complex cases (e.g. in our real case, we had an array of classes in every item, and we had to sort them by minimumTime and choose the most optimal one), the topology could become very complex, resulting in many joins groupings and aggregations, significantly impacting performance.
 
-All in all, the approach works fine if the cardinality between two tables you have is high. It can be fully automated, it stays within the whole Kafka context and flexible enough for more integrations.
+All in all, the approach works fine if the cardinality between two tables you have is high, and you've got a simple joining logic. 
+It can be fully automated, it stays within the whole Kafka context and flexible enough for more integrations.
+
 But let's look at another example of how could we complete the task if we have performance concerns.
 
 ## Option 2: Use Kafka Streams and Update Commands to merge the datasources
@@ -188,10 +190,10 @@ At the same time, our platform can know exactly when the class is updated, and c
 We can approach the requirement accomplishment by finding a way how to send signals to our platform to reprocess our items' information, so that the delivery times could be updated.
 And we want to avoid Foreign Key Joins in our approach :)
 
-We are going to use a regular primary key join by message key which is the fastest way to join the streams. In case when our items information have a itemId as a key, we need to have a topic with itemId as a message key as well, so that we could send events there when we want the stream to redo the work, look up DynamoDB table and update the values of delivery times. 
+We are going to use a regular primary key join by message key which is the fastest way to join the streams. In case when our items information have a ``itemId`` as a key, we need to have a topic with ``itemId`` as a message key as well, so that we could send events there when we want the stream to redo the work, look up DynamoDB table and update the values of delivery times. 
 We'll call this new topic "replay" topic from now on - because we want to use this topic as a source for "replay" events for our items, so that they could go through stream processing logic one more time when we need them to.
 
-The challenging part there would be to have these itemIds available to us, and to have a topic filled with such messages, once we want the times to be updated in our items information.
+The challenging part there would be to have these ``itemIds`` available to us, and to have a topic filled with such messages, once we want the times to be updated in our items information.
 First of all, you need a source for the item ids. This could be a database, or some system you could integrate with to efficiently grab these ids and place them into the topic.
 
 For our case, since we are a shop, we've got a search engine which is running on Apache Solr. We can query it for the item ids, or we can use a middleware access layer like API, if we have one, and we want to maintain low coupling in the system.
@@ -201,10 +203,10 @@ This could be a combination of a job and an application which could read the ids
 
 In short, the algorithm would look like that:
 
-1. Create a new topic in Kafka with itemId as a message key. Choose the number of partitions and replication factor (it could be the same as you general items topic parameters).
+1. Create a new topic in Kafka with ``itemId`` as a message key. Choose the number of partitions and replication factor (it could be the same as you general items topic parameters).
 2. Change your main topology so that it would not only read DynamoDB for classes data, but would also perform a primary key join of a stream with items' data with the stream of your new topic.
-3. Implement a functional component which would read the itemIds, and post them into the new Kafka topic. Consider retry policies and failover mechanisms for it.
-4. Add an interface to trigger the process of itemIds replay, and integrate with it in the classes exporting job.
+3. Implement a functional component which would read the ``itemIds``, and post them into the new Kafka topic. Consider retry policies and failover mechanisms for it.
+4. Add an interface to trigger the process of ``itemIds`` replay, and integrate with it in the classes exporting job.
 
 To implement the overall topology with primary key join, one will need to define it in the way similar to the one shown below, written in Java using Spring:
 
