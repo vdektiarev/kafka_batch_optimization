@@ -259,6 +259,7 @@ The approach has the following benefits:
 2. The approach will be performance efficient for the items pipeline in general, because it uses an efficient streams join to process the data, and fast queries to DynamoDB which could be additionally cached if needed.
 3. The approach implements few universal mechanisms for events replay, which can be used in other parts of the data pipeline if needed.
 4. The approach works fast enough especially for low amount of delivery classes to merge with the items, if we have quick access to classes data.
+5. Such an approach is resilient to additional complications to business logic of delivery classes calculation and times assignment, if it was performant enough before the changes. Since the topology itself is simple, and the business logic is not changed, even in case when there is an array of classes for an item, which needs additional calculations, the approach will maintain the initial performance.
 
 However, it also brings some challenges:
 
