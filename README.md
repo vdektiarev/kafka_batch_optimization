@@ -193,10 +193,10 @@ And we want to avoid Foreign Key Joins in our approach :)
 We are going to use a regular primary key join by message key which is the fastest way to join the streams. In case when our items information have a ``itemId`` as a key, we need to have a topic with ``itemId`` as a message key as well, so that we could send events there when we want the stream to redo the work, look up DynamoDB table and update the values of delivery times. 
 We'll call this new topic "replay" topic from now on - because we want to use this topic as a source for "replay" events for our items, so that they could go through stream processing logic one more time when we need them to.
 
-The challenging part there would be to have these ``itemIds`` available to us, and to have a topic filled with such messages, once we want the times to be updated in our items information.
+The challenging part there would be to have these ``itemIds`` available to us, and to have a topic filled with such messages, once we want the times to be updated in our items' information.
 First of all, you need a source for the item ids. This could be a database, or some system you could integrate with to efficiently grab these ids and place them into the topic.
 
-For our case, since we are a shop, we've got a search engine which is running on Apache Solr. We can query it for the item ids, or we can use a middleware access layer like API, if we have one, and we want to maintain low coupling in the system.
+For our case, since we are a shop, we've got a search engine. And in our case it is running on Apache Solr. We can query it for the item ids, or we can use a middleware access layer like API, if we have one, and we want to maintain low coupling in the system.
 
 Once we have a storage with ids, we need a functional unit to grab them and produce them in the new topic on demand.
 This could be a combination of a job and an application which could read the ids and post them to Kafka.
