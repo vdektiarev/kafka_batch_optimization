@@ -32,6 +32,8 @@ Logistics department manually controls these delivery times by assigning minimum
 
 ![Delivery Class Table](images/delivery_class_table.png)
 
+![Item Table](images/item_table.png)
+
 They update delivery times via their own specific process they are used to, and the data is saved to their own separate datasource which has nothing to do with the overall existing items data processing and storage platform.
 Once they change the time for a specific class, they expect every item which has this class assigned to eventually have the updated delivery time values, and these values should be visible in the item description page in the online shop.
 There is no specific requirement on how quick the information must be updated in the online shop.
@@ -98,6 +100,7 @@ public class ItemDeliveryClassJoiner implements ValueJoiner<Item, DeliveryClass,
         return ItemDeliveryClassMergedData.newBuilder()
                 .setId(item.getId())
                 .setDescription(item.getDescription())
+                .setPrice(item.getPrice)
                 .setMinimumDeliveryTime(deliveryClass.getMinimumTime())
                 .setMaximumDeliveryTime(deliveryClass.getMaximumTime())
                 .build();
