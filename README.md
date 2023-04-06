@@ -276,7 +276,8 @@ However, it also brings some challenges:
 
 Both approaches will work and accomplish the given requirements in this specific case.
 However, one of them could bring performance degradation of the whole data processing chain, while another one is challenging to implement and could bring conceptual inconsistencies of the whole data processing platform.
-You need to consider the following things when choosing between approaches:
+
+In general, you may want to proceed with approach 1, especially in cases when you have good cardinality between your materialized views of data you want to join - due to better conceptual integrity, development simplicity, extendability and flexibility. However, you still need to consider the following things when making a choice between approaches:
 
 1. Your data volumes.
 2. Cardinality between both data sources you want to join.
